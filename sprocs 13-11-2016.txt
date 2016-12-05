@@ -1,0 +1,489 @@
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `new_procedure`(in topic varchar(45), in inSummary text, in modera varchar(20))
+BEGIN
+
+declare curr_forum_id int(11);
+declare URL_str varchar(255);
+
+if not exists(select max(forumId) from Forum)
+then
+set curr_forum_id = 0;
+else
+select max(forumId) into curr_forum_id from Forum;
+end if;
+
+set curr_forum_id = curr_forum_id + 1;
+set URL_str = "Forum";
+
+insert into Forum(ForumId, Topic, URL, Summary, WhenCreated, CreatedByModerator_Username)
+values
+(curr_forum_id, topic, URL_str, inSummary, CURDATE(), modera);
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spAcceptRequest`(from_user_name varchar(20), to_user_name varchar(20))
+BEGIN
+update Friendship set WhenConfirmed=CURTIME() where Requester_Username = from_user_name and Requested_Username = to_user_name;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spAddAdministrator`(username varchar(20), phone char(12))
+BEGIN
+insert into Administrator values(username, phone);
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spAddEndUser`(username varchar(20))
+BEGIN
+insert into EndUser values(username, 0, CURDATE());
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spAddModerator`(username varchar(20), phone char(12))
+BEGIN
+	insert into moderator values(username, phone);
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spAddQualifications`(in uname varchar(20), in qual varchar(45))
+BEGIN
+
+declare qual_id int(11);
+SELECT 
+    MAX(PropertyID)
+INTO qual_id FROM
+    property;
+if qual_id is null
+then
+set qual_id = 0;
+else
+select max(PropertyID) into qual_id from property;
+end if;
+
+insert into moderatorqualification values(qual_id, uname, CURTIME());
+insert into qualification values(qual_id, qual);
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spAddUser`(username varchar(20), password varchar(45), 
+email1 varchar(128), email2 varchar(128), 
+FirstName varchar(45), LastName varchar(45), AboutMe text, PhotoURL1 varchar(255),
+PhotoURL2 varchar(255), PhotoURL3 varchar(255), StreetNumber varchar(20),
+StreetName varchar(60), MajorMunicipality varchar(45), GoverningDistrict varchar(45),
+PostalArea varchar(45), UserTypeId int(11), Status tinyint(1))
+BEGIN
+
+insert into User values(username, password, 
+email1, email2, 
+FirstName, LastName, AboutMe, PhotoURL1,
+PhotoURL2, PhotoURL3, StreetNumber,
+StreetName, MajorMunicipality, GoverningDistrict,
+PostalArea, UserTypeId, Status);
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spAllAvailableForUser`(from_user varchar(20))
+BEGIN
+select user.Username, concat(user.FirstName, ' ', user.LastName) 
+from 
+User join usertype
+on user.usertypeid = usertype.usertypeid and usertype.description='EndUser' 
+join EndUser on user.username = enduser.username and user.username 
+not in (select Requested_Username from friendship where Requester_Username=from_user
+        union distinct
+        select username from user where username=from_user);
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spAllRecievedRequests`(for_user varchar(20))
+BEGIN
+select Requester_Username, concat(u.firstname, ' ', u.lastname)
+from friendship f join User u
+on
+f.Requester_Username = u.username
+where f.Requested_Username = for_user and WhenConfirmed is null and WhenRejected is null;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spCheckLoginDetails`(email varchar(128), pass varchar(45))
+BEGIN
+if exists(select * from User where email1 =  email and password=pass)
+then
+select true;
+else
+select false;
+end if;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spCheckRatingExists`(in p_usr varchar(20), in time_c datetime, in usr varchar(20))
+BEGIN
+if exists(select * from Rating where Post_Username = p_usr and Post_TimeCreated = time_c and Rater_Username = usr)
+then
+select true;
+else
+select false;
+end if;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spCreateForum`(in topic varchar(45), in inSummary text, in modera varchar(20))
+BEGIN
+
+declare curr_forum_id int(11);
+declare URL_str varchar(255);
+
+SELECT 
+    MAX(forumId)
+INTO curr_forum_id FROM
+    Forum;
+if curr_forum_id is null
+then
+set curr_forum_id = 0;
+else
+select max(forumId) into curr_forum_id from Forum;
+end if;
+
+
+set curr_forum_id = curr_forum_id + 1;
+set URL_str = concat('Forum', curr_forum_id);
+insert into Forum(ForumID, Topic, URL, Summary, WhenCreated, CreatedByModerator_Username)
+values
+(curr_forum_id, topic, URL_str, inSummary, CURTIME(), modera);
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spDeleteForum`(in forum int(11), in uname varchar(20))
+BEGIN
+update Forum set WhenClosed = CURDATE(),
+DeletedByModerator_Username = uname 
+where forumId = forum;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spGetAllForums`()
+BEGIN
+select forumId, Topic, summary from Forum where whenClosed is null;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spGetAllFriends`(user_name varchar(20))
+BEGIN
+select Requested_Username from friendship where Requester_Username = user_name 
+and WhenConfirmed is not null 
+and WhenRejected is null 
+and WhenUnfriended is null
+union distinct
+select Requester_Username from friendship where Requested_Username = user_name 
+and WhenConfirmed is not null 
+and WhenRejected is null 
+and WhenUnfriended is null;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spGetAllPostsById`(in id int(11))
+BEGIN
+select username, timecreated, textentry from post where forumid=id order by TimeCreated;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spGetAllRelatedComments`(in username varchar(20), in timecreated varchar(50))
+BEGIN
+select Commenter_Username,
+CommentTime,
+CommentText,
+PhotoLocation,
+LinkLocation,
+VideoLocation from Comment where Post_Username=username and Post_TimeCreated=timecreated;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spGetAvgRating`(in p_usr varchar(20), in tim datetime)
+BEGIN
+select avg(stars) from rating where Post_Username = p_usr and Post_TimeCreated = tim;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spGetForumDataAtLogin`(in id int(11))
+BEGIN
+select topic, summary from Forum where forumId = id;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spGetHealthData`(in user varchar(20))
+BEGIN
+select p.name, d.value from
+property as p join datum as d
+on p.propertyid = d.PropertyID
+where d.username=user;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spGetLoginData`(email varchar(128), pass varchar(45))
+BEGIN
+	Declare type_of_user varchar(45);
+    Declare type_id smallint(1);
+	Declare user_name varchar(20);
+    Declare phone_no char(12);
+	
+SELECT 
+    UserTypeID
+INTO type_id FROM
+    user
+WHERE
+    email1 = email;
+    
+	SELECT 
+    Description
+INTO type_of_user FROM
+    usertype
+WHERE
+    UserTypeID = type_id;
+
+	SELECT 
+    username
+INTO user_name FROM
+    user
+WHERE
+    email1 = email;
+		
+	if type_of_user='Administrator'
+	then
+		select Phone into phone_no  from administrator where username=user_name;
+	elseif type_of_user='Moderator'
+	then
+		select Phone into phone_no from Moderator where username=user_name;
+	else 
+		select '' into phone_no;
+	END IF;
+    
+    	SELECT 
+    u.username,
+    u.email1,
+    u.email2,
+    u.firstname,
+    u.lastname,
+    u.aboutme,
+    u.photourl1,
+    u.photourl2,
+    u.photourl3,
+    u.streetnumber,
+    u.streetname,
+    u.majormunicipality,
+    u.governingdistrict,
+    u.postalarea,
+    u.status,
+    t.description AS usertype,
+    phone_no
+FROM
+    user AS u
+        JOIN
+    usertype AS t ON u.usertypeid = t.usertypeid
+WHERE
+    u.username = user_name
+;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spGetProperty`()
+BEGIN
+select name from property order by propertyID asc;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spIfExistsEmailId`(email varchar(20))
+BEGIN
+if exists(select * from User where email1 =  email)
+then
+select true;
+else
+select false;
+end if;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spIfExistsUserId`(uname varchar(20))
+BEGIN
+if exists(select * from User where username =  uname)
+then
+select true;
+else
+select false;
+end if;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spInsertCommentForPost`(in post_username varchar(20), 
+in Post_TimeCreated varchar(50), 
+in username varchar(50), in commen text)
+BEGIN
+insert into comment(Post_Username,
+Post_TimeCreated,
+Commenter_Username,
+CommentTime,
+CommentText) values(post_username, Post_TimeCreated, username, CURTIME(), commen);
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spInsertDatum`(in uname varchar(50), in prop_id int(11), in value text)
+BEGIN
+
+declare datum_id int(11);
+SELECT 
+    MAX(DatumID)
+INTO datum_id FROM
+    Datum;
+if datum_id is null
+then
+set datum_id = 0;
+else
+select max(DatumID) into datum_id from Datum;
+end if;
+
+set datum_id = datum_id + 1;
+insert into Datum values(datum_id, uname, prop_id, value, CURTIME());
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spInsertPost`(in f_id int(11), in post varchar(200), in user_n varchar(20))
+BEGIN
+insert into post(Username, timecreated, ForumID, TextEntry)
+values(user_n, CURTIME(), f_id, post);
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spInsertProperty`(in prop varchar(50), in descr text)
+BEGIN
+
+declare prop_id int(11);
+SELECT 
+    MAX(PropertyID)
+INTO prop_id FROM
+    property;
+if prop_id is null
+then
+set prop_id = 0;
+else
+select max(PropertyID) into prop_id from property;
+end if;
+
+set prop_id = prop_id+1;
+insert into property values(prop_id, prop, descr);
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spInsertRating`(in p_usr varchar(20), in tim datetime, in com varchar(20), in rating int(11) )
+BEGIN
+insert into rating values(p_usr, tim, com, rating);
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spRejectRequest`(from_user_name varchar(20), to_user_name varchar(20))
+BEGIN
+update Friendship set WhenRejected=CURTIME() where Requester_Username = from_user_name and Requested_Username = to_user_name;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spSendFriendRequest`(from_user_name varchar(20), to_user_name varchar(20))
+BEGIN
+if exists(select * from Friendship where Requester_Username =  from_user_name and Requested_Username = to_user_name)
+then
+select 1;
+else
+insert into friendship(Requester_Username, Requested_Username, WhenRequested) values(from_user_name, to_user_name, NOW());
+end if;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spSentRequestDetails`(from_user varchar(20))
+BEGIN
+select Requested_Username,
+case 
+when WhenRejected is not null then 'Rejected'
+when WhenUnfriended is not null then 'Unfriended'
+when WhenConfirmed is not null then 'Accepted'
+when WhenConfirmed is null then 'Not Responded' 
+else NULL end as status
+from friendship
+where Requester_Username = from_user;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spUnfriend`(in from_user_name varchar(20), in to_user_name varchar(20))
+BEGIN
+update friendship set WhenUnfriended=CURTIME() 
+where Requester_Username=from_user_name and Requested_Username=to_user_name;
+UPDATE friendship 
+SET 
+    WhenUnfriended = CURTIME()
+WHERE
+    Requested_Username = from_user_name
+        AND Requester_Username = to_user_name;
+END$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE DEFINER=`root`@`localhost` PROCEDURE `spUpdateData`(in_password varchar(45), in_username varchar(20), in_email2 varchar(128), 
+in_first_name varchar(45), in_last_name varchar(45), in_about_me text, 
+in_photoURL1 varchar(255), in_photoURL2 varchar(255), in_photoURL3 varchar(255), 
+		in_street_no varchar(20), in_street_name varchar(60), in_MajorMuniciality varchar(45), 
+		in_GoverningDistrict varchar(45), in_PostalArea varchar(45), 
+        in_phone char(12), in_usertype varchar(20), in_Status tinyint(1))
+BEGIN
+
+update User set Password = in_password,
+ email2 = in_email2,
+FirstName=in_first_name,
+LastName=in_last_name,
+AboutMe=in_about_me,
+PhotoURL1=in_photoURL1,
+PhotoURL2=in_photoURL2,
+PhotoURL3=in_photoURL3,
+StreetNumber=in_street_no,
+StreetName=in_street_name,
+MajorMunicipality=in_MajorMuniciality,
+GoverningDistrict=in_GoverningDistrict,
+PostalArea=in_PostalArea,
+Status=in_Status where username = in_username;
+
+if in_usertype = 'Administrator'
+then
+update Administrator set phone=in_phone where username=in_username;
+elseif in_usertype = 'Moderator'
+then 
+update Moderator set phone = in_phone where username = in_username;
+end if;
+END$$
+DELIMITER ;
